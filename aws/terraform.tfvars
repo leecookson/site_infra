@@ -1,4 +1,5 @@
-domain_name            = "cookson.pro"
+hosted_zone_domain     = "cookson.pro"
+domain_name            = "www.cookson.pro"
 api_origin_domain      = "api.cookson.pro"
 content_s3_bucket_name = "cookson.pro"
 log_bucket_name        = "cookson.pro.logs"

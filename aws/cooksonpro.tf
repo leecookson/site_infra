@@ -1,20 +1,24 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
 
-
-provider "aws" {
-  region = "us-east-1" # ACM certificates for CloudFront must be in us-east-1
-}
 
 data "aws_route53_zone" "cookson_pro" {
-  name         = var.domain_name
+  name         = var.hosted_zone_domain
   private_zone = false
+}
+
+data "aws_cloudfront_cache_policy" "caching_optimized" {
+  name = "Managed-CachingOptimized"
+}
+
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+
+data "aws_cloudfront_origin_request_policy" "origin_cors_s3" {
+  name = "Managed-CORS-S3Origin"
+}
+
+data "aws_cloudfront_origin_request_policy" "origin_all_viewer_except_host_header" {
+  name = "Managed-AllViewerExceptHostHeader"
 }
 
 # ACM Certificate for the CloudFront distribution
@@ -54,29 +58,57 @@ resource "aws_route53_record" "cookson_pro" {
   zone_id         = data.aws_route53_zone.cookson_pro.zone_id
 }
 
+# Route 53 Alias Record for CloudFront Distribution
+resource "aws_route53_record" "cloudfront_alias" {
+  zone_id = data.aws_route53_zone.cookson_pro.zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.s3_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.s3_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
 # Note: You will need to add the DNS CNAME records provided by aws_acm_certificate.cookson_pro.domain_validation_options
 # to your DNS provider to validate the certificate. If using Route 53, this can be automated.
 
 # S3 Bucket for website content
-resource "aws_s3_bucket" "site_bucket" {
+data "aws_s3_bucket" "site_bucket" {
   bucket = var.content_s3_bucket_name
   # ACLs are not recommended for new buckets. Use bucket policies and IAM.
   # acl    = "private" # This is the default and recommended
 
-  tags = {
-    Name        = "${var.content_s3_bucket_name}-static-site"
-    Environment = "production"
-  }
+}
+
+resource "aws_s3_object" "all_static" {
+  for_each      = fileset("./static", "*")
+  bucket        = var.content_s3_bucket_name
+  key           = "./static/${each.value}"
+  source        = "./static/${each.value}"
+  content_type  = "text/html"
+  cache_control = "public, max-age=1200"
+  etag          = filemd5("./static/${each.value}")
+  acl           = "public-read"
 }
 
 # Block all public access to the S3 bucket
 resource "aws_s3_bucket_public_access_block" "site_bucket_public_access_block" {
-  bucket = aws_s3_bucket.site_bucket.id
+  bucket = data.aws_s3_bucket.site_bucket.id
 
-  block_public_acls       = true
+  block_public_acls       = false
   block_public_policy     = true
-  ignore_public_acls      = true
+  ignore_public_acls      = false
   restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "example" {
+  bucket = data.aws_s3_bucket.site_bucket.id
+
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
 }
 
 # CloudFront Origin Access Identity (OAI) to access the S3 bucket
@@ -88,7 +120,7 @@ resource "aws_cloudfront_origin_access_identity" "oai" {
 data "aws_iam_policy_document" "s3_bucket_policy_doc" {
   statement {
     actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.site_bucket.arn}/*"]
+    resources = ["${data.aws_s3_bucket.site_bucket.arn}/*"]
     principals {
       type        = "AWS"
       identifiers = [aws_cloudfront_origin_access_identity.oai.iam_arn]
@@ -97,7 +129,7 @@ data "aws_iam_policy_document" "s3_bucket_policy_doc" {
 }
 
 resource "aws_s3_bucket_policy" "bucket_policy" {
-  bucket = aws_s3_bucket.site_bucket.id
+  bucket = data.aws_s3_bucket.site_bucket.id
   policy = data.aws_iam_policy_document.s3_bucket_policy_doc.json
 }
 
@@ -110,10 +142,23 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 
   aliases = [var.domain_name]
 
+  custom_error_response {
+    error_code         = 404
+    response_code      = 404
+    response_page_path = "/404.html"
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 403
+    response_page_path = "/404.html"
+  }
+
   # Origin for S3 static content
   origin {
-    domain_name = aws_s3_bucket.site_bucket.bucket_regional_domain_name
+    domain_name = data.aws_s3_bucket.site_bucket.bucket_regional_domain_name
     origin_id   = "S3-${var.content_s3_bucket_name}"
+    origin_path = "/static"
 
     s3_origin_config {
       origin_access_identity = aws_cloudfront_origin_access_identity.oai.cloudfront_access_identity_path
@@ -146,7 +191,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     # Use a managed cache policy optimized for S3 static content.
     # This policy includes: no query strings, no headers, no cookies in cache key.
     # Gzip and Brotli compression enabled.
-    cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6" # Managed-CachingOptimized
+    cache_policy_id = data.aws_cloudfront_cache_policy.caching_optimized.id
 
     # If your S3 content requires CORS handling where S3 itself needs to see the Origin header,
     # you might need an Origin Request Policy like "Managed-CORS-S3Origin".
@@ -167,12 +212,12 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     # Use a managed cache policy that disables caching.
     # API responses are often dynamic and should not be cached by CloudFront,
     # or caching should be controlled by origin cache headers (Cache-Control, Expires).
-    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a8493f392" # Managed-CachingDisabled
+    cache_policy_id = data.aws_cloudfront_cache_policy.caching_disabled.id
 
     # Use a managed origin request policy that forwards all viewer headers (except Host),
     # all cookies, and all query strings to the API origin.
     # CloudFront will set the Host header to the origin domain name (api.cookson.pro).
-    origin_request_policy_id = "b6878925-4c69-4116-9397-33261f75c195" # Managed-AllViewerExceptHostHeader
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.origin_all_viewer_except_host_header.id
   }
 
   # Viewer certificate configuration
@@ -233,7 +278,7 @@ output "acm_validation_records" {
 
 output "s3_bucket_name_output" {
   description = "The name of the S3 bucket created for static content."
-  value       = aws_s3_bucket.site_bucket.bucket
+  value       = data.aws_s3_bucket.site_bucket.bucket
 }
 
 output "acm_certificate_validation_dns_records" {
