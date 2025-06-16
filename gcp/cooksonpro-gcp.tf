@@ -208,29 +208,30 @@ resource "google_compute_global_forwarding_rule" "http_forwarding_rule" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
 }
 
-# resource "google_storage_bucket_object" "default_index_html" {
-#   name   = "index.html"
-#   source = "./static/index.html"
-#   bucket = google_storage_bucket.static_site_bucket.name
-# }
+module "template_files" {
+  source = "hashicorp/dir/template"
 
-# resource "google_storage_bucket_object" "default_404_html" {
-#   name   = "404.html"
-#   source = "./static/404.html"
-#   bucket = google_storage_bucket.static_site_bucket.name
-# }
-
+  base_dir = "./static"
+  template_vars = {
+  }
+}
 
 resource "google_storage_bucket_object" "all_static" {
-  for_each       = fileset("./static", "*")
-  name           = each.value
-  bucket         = google_storage_bucket.static_site_bucket.name
-  source         = "./static/${each.value}"
-  content_type   = "text/html"
+  for_each = module.template_files.files
+
+  bucket       = google_storage_bucket.static_site_bucket.name
+  name         = each.key
+  content_type = each.value.content_type
+
+  # The template_files module guarantees that only one of these two attributes
+  # will be set for each file, depending on whether it is an in-memory template
+  # rendering result or a static file on disk.
+  source  = each.value.source_path
+  content = each.value.content
+
   cache_control  = "public, max-age=1200"
   detect_md5hash = true
 }
-
 
 # Output the IP address of the load balancer
 output "cdn_ip_address" {

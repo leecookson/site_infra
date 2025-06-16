@@ -91,34 +91,26 @@ resource "azurerm_storage_container" "content_container" {
   container_access_type = "blob" # Anonymous read access for blobs
 }
 
-# resource "azurerm_storage_blob" "index_html" {
-#   name                   = "index.html"
-#   storage_account_name   = azurerm_storage_account.content_storage.name
-#   storage_container_name = azurerm_storage_container.content_container.name
-#   type                   = "Block"
-#   content_type           = "text/html"
-#   source                 = "./static/index.html"
-# }
 
-# resource "azurerm_storage_blob" "web_404_html" {
-#   name                   = "404.html"
-#   storage_account_name   = azurerm_storage_account.content_storage.name
-#   storage_container_name = azurerm_storage_container.content_container.name
-#   type                   = "Block"
-#   content_type           = "text/html"
-#   source                 = "./static/404.html"
-# }
+module "template_files" {
+  source = "hashicorp/dir/template"
+
+  base_dir = "./static"
+  template_vars = {
+  }
+}
+
 
 resource "azurerm_storage_blob" "all_static" {
-  for_each               = fileset("./static", "*")
-  name                   = each.value
+  for_each               = module.template_files.files
+  name                   = each.key
   storage_account_name   = azurerm_storage_account.content_storage.name
   storage_container_name = azurerm_storage_container.content_container.name
   type                   = "Block"
-  source                 = "./static/${each.value}"
-  content_type           = "text/html"
+  source                 = each.value.source_path
+  content_type           = each.value.content_type
   cache_control          = "public, max-age=1200"
-  content_md5            = filemd5("./static/${each.value}")
+  content_md5            = each.value.digests.md5
 }
 
 # Azure Front Door Profile (Standard SKU)

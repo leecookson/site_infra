@@ -82,14 +82,24 @@ data "aws_s3_bucket" "site_bucket" {
 
 }
 
+module "template_files" {
+  source = "hashicorp/dir/template"
+
+  base_dir = "./static"
+  template_vars = {
+  }
+}
+
 resource "aws_s3_object" "all_static" {
-  for_each      = fileset("./static", "*")
-  bucket        = var.content_s3_bucket_name
-  key           = "./static/${each.value}"
-  source        = "./static/${each.value}"
-  content_type  = "text/html"
+  for_each     = module.template_files.files
+  bucket       = var.content_s3_bucket_name
+  key          = each.key
+  content_type = each.value.content_type
+  source       = each.value.source_path
+  content      = each.value.content
+
   cache_control = "public, max-age=1200"
-  etag          = filemd5("./static/${each.value}")
+  etag          = each.value.digests.md5
   acl           = "public-read"
 }
 
@@ -158,7 +168,6 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   origin {
     domain_name = data.aws_s3_bucket.site_bucket.bucket_regional_domain_name
     origin_id   = "S3-${var.content_s3_bucket_name}"
-    origin_path = "/static"
 
     s3_origin_config {
       origin_access_identity = aws_cloudfront_origin_access_identity.oai.cloudfront_access_identity_path
