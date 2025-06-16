@@ -8,7 +8,6 @@
     "file": "oidc_token.json",
     "format": {
       "type": "json",
-      "subject_token_field_name": "access_token"
     }
   }
 }
