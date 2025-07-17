@@ -2,5 +2,8 @@
 .terraform
 .terraform.*
 
+# any zip files will be created by the build process, do not commit
+*.zip
+
 # temp work folder used for plan/apply/destroy/import/state
 work
