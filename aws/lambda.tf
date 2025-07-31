@@ -30,6 +30,16 @@ resource "aws_secretsmanager_secret" "open_api_secret" {
   description = "Secret for CooksonPro API access to weather API"
 }
 
+resource "aws_secretsmanager_secret" "astro_app_id" {
+  name        = "/apikeys/ASTRO_APP_ID"
+  description = "Secret for CooksonPro API access to weather API"
+}
+
+resource "aws_secretsmanager_secret" "astro_app_secret" {
+  name        = "/apikeys/ASTRO_APP_SECRET"
+  description = "Secret for CooksonPro API access to weather API"
+}
+
 resource "aws_iam_role_policy_attachment" "lambda_logging" {
   role       = aws_iam_role.lambda_exec_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
