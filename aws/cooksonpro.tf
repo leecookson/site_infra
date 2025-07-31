@@ -77,8 +77,18 @@ resource "aws_route53_record" "cloudfront_alias" {
 # S3 Bucket for website content
 data "aws_s3_bucket" "site_bucket" {
   bucket = var.content_s3_bucket_name
-  # ACLs are not recommended for new buckets. Use bucket policies and IAM.
-  # acl    = "private" # This is the default and recommended
+}
+
+# The following configuration allows objects to be public-read even if the bucket is private
+# This is achieved by setting object_ownership to ObjectWriter and enabling public ACLs on objects.
+# The bucket itself remains private due to the public access block.
+# This is necessary for CloudFront to serve content from the S3 bucket when using OAI.
+# See: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_ownership_controls
+# and https://docs.aws.amazon.com/AmazonS3/latest/userguide/about-object-ownership.html
+
+resource "aws_s3_bucket_acl" "site_bucket_acl" {
+  bucket = data.aws_s3_bucket.site_bucket.id
+  acl    = "private" # Ensure the bucket itself remains private
 
 }
 
@@ -143,6 +153,29 @@ resource "aws_s3_bucket_policy" "bucket_policy" {
   policy = data.aws_iam_policy_document.s3_bucket_policy_doc.json
 }
 
+resource "aws_s3_bucket" "www_cookson_pro_loudfront_logs" {
+  bucket = var.log_bucket_name
+
+  tags = {
+    Name        = "www.cookson.pro-cloudfront-logs"
+    Environment = "production"
+  }
+}
+
+resource "aws_s3_bucket_acl" "www_cookson_pro_loudfront_logs" {
+  bucket     = aws_s3_bucket.www_cookson_pro_loudfront_logs.id
+  acl        = "private"
+  depends_on = [aws_s3_bucket_ownership_controls.www_cookson_pro_loudfront_logs]
+}
+
+# Resource to avoid error "AccessControlListNotSupported: The bucket does not allow ACLs"
+resource "aws_s3_bucket_ownership_controls" "www_cookson_pro_loudfront_logs" {
+  bucket = aws_s3_bucket.www_cookson_pro_loudfront_logs.id
+  rule {
+    object_ownership = "ObjectWriter"
+  }
+}
+
 # CloudFront Distribution
 resource "aws_cloudfront_distribution" "s3_distribution" {
   enabled             = true
@@ -151,6 +184,12 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   default_root_object = "index.html" # Common default object for static sites
 
   aliases = [var.domain_name]
+
+  logging_config {
+    bucket          = "${var.log_bucket_name}.s3.amazonaws.com"
+    prefix          = "cloudfront/${var.domain_name}/"
+    include_cookies = false
+  }
 
   custom_error_response {
     error_code         = 404
@@ -176,8 +215,9 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 
   # Origin for API requests
   origin {
-    domain_name = var.api_origin_domain
-    origin_id   = "API-${var.api_origin_domain}"
+    domain_name = "${aws_api_gateway_rest_api.api.id}.execute-api.us-east-1.amazonaws.com"
+    origin_id   = "API-origin"
+    origin_path = "/prod"
 
     custom_origin_config {
       http_port              = 80
@@ -210,7 +250,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   # Ordered cache behavior for API requests (/api*)
   ordered_cache_behavior {
     path_pattern     = "/api*"
-    target_origin_id = "API-${var.api_origin_domain}"
+    target_origin_id = "API-origin"
 
     allowed_methods = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods  = ["GET", "HEAD", "OPTIONS"] # Cache GET, HEAD, OPTIONS if API supports it
