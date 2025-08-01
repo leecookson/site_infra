@@ -43,6 +43,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::021874127869:role/s3_backend
           aws-region: us-east-1
+          role-session-name: s3-backend
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
