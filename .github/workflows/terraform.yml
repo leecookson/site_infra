@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure Terraform Backend Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.2.1
         with:
           role-to-assume: arn:aws:iam::021874127869:role/s3_backend
           aws-region: us-east-1
@@ -52,7 +52,7 @@ jobs:
         run: aws sts get-caller-identity --profile s3-backend
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.2.1
         with:
           role-to-assume: arn:aws:iam::021874127869:role/github-actions-oidc-role
           aws-region: us-east-1
