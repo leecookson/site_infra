@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure Terraform Backend Credentials
+        id: backend-creds
         uses: aws-actions/configure-aws-credentials@main
         with:
           role-to-assume: arn:aws:iam::021874127869:role/s3_backend
@@ -44,9 +45,9 @@ jobs:
 
       - name: Store Backend Credentials in profile
         run: |
-          aws configure set aws_access_key_id ${{ steps.creds.outputs.aws-access-key-id }} --profile s3-backend
-          aws configure set aws_secret_access_key ${{ steps.creds.outputs.aws-secret-access-key }} --profile s3-backend
-          aws configure set aws_session_token ${{ steps.creds.outputs.aws-session-token }} --profile s3-backend
+          aws configure set aws_access_key_id ${{ steps.backend-creds.outputs.aws-access-key-id }} --profile s3-backend
+          aws configure set aws_secret_access_key ${{ steps.backend-creds.outputs.aws-secret-access-key }} --profile s3-backend
+          aws configure set aws_session_token ${{ steps.backend-creds.outputs.aws-session-token }} --profile s3-backend
 
       - name: Check AWS Credentials for S3 Backend
         run: aws sts get-caller-identity --profile s3-backend
