@@ -36,7 +36,13 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::021874127869:role/github-actions-oidc-role
-          aws-region: us-east-1 # Update to your AWS region
+          aws-region: us-east-1
+
+      - name: Configure Terraform Backend Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::021874127869:role/s3_backend
+          aws-region: us-east-1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
