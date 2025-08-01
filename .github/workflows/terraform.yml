@@ -6,13 +6,13 @@ on:
       - main
     paths:
       - "aws/**"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "aws/**"
-
-# AWS_S3_BACKEND_ROLE: "arn:aws:iam::021874127869:role/s3_backend"
+      - ".github/workflows/terraform.yml"
+  # Uncomment the following lines to enable pull request workflows
+  # pull_request:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "aws/**"
 
 permissions:
   id-token: write # Required for AWS OIDC
