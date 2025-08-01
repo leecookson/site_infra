@@ -32,20 +32,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::021874127869:role/github-actions-oidc-role
-          aws-region: us-east-1
-
       - name: Configure Terraform Backend Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::021874127869:role/s3_backend
           aws-region: us-east-1
           role-session-name: s3-backend
+          output-credentials: true
+          output-env-credentials: false
+          unset-current-credentials: true
+
+      - name: Store Backend Credentials in profile
+        run: |
+          aws configure set aws_access_key_id ${{ steps.creds.outputs.aws-access-key-id }} --profile s3-backend
+          aws configure set aws_secret_access_key ${{ steps.creds.outputs.aws-secret-access-key }} --profile s3-backend
+          aws configure set aws_session_token ${{ steps.creds.outputs.aws-session-token }} --profile s3-backend
 
       - name: Check AWS Credentials for S3 Backend
+        run: aws sts get-caller-identity --profile s3-backend
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::021874127869:role/github-actions-oidc-role
+          aws-region: us-east-1
+          unset-current-credentials: true
+
+      - name: Check AWS Credentials for S3 Backend (temp)
         run: aws sts get-caller-identity --profile s3-backend
 
       - name: Setup Terraform
