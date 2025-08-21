@@ -1,5 +1,4 @@
 
-
 data "aws_route53_zone" "cookson_pro" {
   name         = var.hosted_zone_domain
   private_zone = false
