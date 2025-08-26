@@ -14,6 +14,9 @@ on:
   #   paths:
   #     - "aws/**"
 
+  # Enables manual triggers
+  workflow_dispatch:
+
 permissions:
   id-token: write # Required for AWS OIDC
   contents: read # Required to checkout the repo
