@@ -1,75 +1,52 @@
 # Try to dynamically build a Python lambda that can handle API requests
+data "aws_caller_identity" "current" {}
 
-variable "api_repo_url" {
+variable "api_py_repo_url" {
   description = "The URL of the Python application repository for the API handler"
   type        = string
   default     = "https://github.com/leecookson/pyweb.git"
 }
-
-resource "aws_iam_role" "lambda_exec_role" {
-  name = "CooksonProLambdaExecRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-        Effect = "Allow"
-        Sid    = ""
-      }
-    ]
-  })
+data "aws_ecr_image" "py_lambda" {
+  repository_name = "pyweb-weather-lambda"
+  image_tag       = var.py_image_hash
 }
 
-
-resource "aws_secretsmanager_secret" "open_api_secret" {
-  name        = "/apikeys/OPEN_API_KEY"
-  description = "Secret for CooksonPro API access to weather API"
-}
-
-resource "aws_secretsmanager_secret" "astro_app_id" {
-  name        = "/apikeys/ASTRO_APP_ID"
-  description = "Secret for CooksonPro API access to weather API"
-}
-
-resource "aws_secretsmanager_secret" "astro_app_secret" {
-  name        = "/apikeys/ASTRO_APP_SECRET"
-  description = "Secret for CooksonPro API access to weather API"
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_logging" {
-  role       = aws_iam_role.lambda_exec_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-data "aws_iam_policy_document" "get_secrets" {
+data "aws_iam_policy_document" "py_ecr_pull" {
   statement {
-    effect    = "Allow"
-    actions   = ["secretsmanager:Get*"]
-    resources = ["arn:aws:secretsmanager:*:*:secret:/apikeys/*"]
+    effect = "Allow"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer"
+    ]
+    # It's best practice to scope this to the specific ECR repository.
+    resources = ["arn:aws:ecr:${var.region}:${data.aws_caller_identity.current.account_id}:repository/${data.aws_ecr_image.py_lambda.repository_name}"]
   }
 }
 
-resource "aws_iam_policy" "get_secrets" {
-  name        = "LambdaGetSecretsPolicy"
-  description = "Allows cooksonpro lambda to access api keys"
-  policy      = data.aws_iam_policy_document.get_secrets.json
+resource "aws_iam_policy" "py_ecr_pull" {
+  name   = "LambdaECRPullPolicyPy"
+  policy = data.aws_iam_policy_document.py_ecr_pull.json
 }
-resource "aws_iam_role_policy_attachment" "get_secrets" {
+
+resource "aws_iam_role_policy_attachment" "py_ecr_pull" {
   role       = aws_iam_role.lambda_exec_role.name
-  policy_arn = aws_iam_policy.get_secrets.arn
+  policy_arn = aws_iam_policy.py_ecr_pull.arn
 }
 
-resource "aws_lambda_function" "api_handler" {
+resource "aws_lambda_function" "py_api_handler" {
   function_name = "pyapi"
-  handler       = "handler.handler"
-  runtime       = "python3.9"
+  package_type  = "Image"
+  image_uri     = data.aws_ecr_image.py_lambda.image_uri
   role          = aws_iam_role.lambda_exec_role.arn
-  timeout       = 11
 
-  filename         = "pyweb/lambda.zip"
-  source_code_hash = filebase64sha256("pyweb/lambda.zip")
+  memory_size = 512
+  timeout     = 29 # Must be <= API Gateway integration timeout
+
+  architectures = ["arm64"]
+
+  environment {
+    variables = {
+      OPEN_API_SECRET_NAME = aws_secretsmanager_secret.open_api_secret.name
+    }
+  }
 }

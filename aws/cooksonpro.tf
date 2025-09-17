@@ -22,8 +22,9 @@ data "aws_cloudfront_origin_request_policy" "origin_all_viewer_except_host_heade
 
 # ACM Certificate for the CloudFront distribution
 resource "aws_acm_certificate" "cookson_pro" {
-  domain_name       = var.domain_name
-  validation_method = "DNS"
+  domain_name               = var.domain_name
+  subject_alternative_names = [var.hosted_zone_domain]
+  validation_method         = "DNS"
 
   tags = {
     Name        = "${var.domain_name}-cloudfront-cert"
@@ -61,6 +62,19 @@ resource "aws_route53_record" "cookson_pro" {
 resource "aws_route53_record" "cloudfront_alias" {
   zone_id = data.aws_route53_zone.cookson_pro.zone_id
   name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.s3_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.s3_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# Route 53 Alias Record for CloudFront Distribution
+resource "aws_route53_record" "cloudfront_root_alias" {
+  zone_id = data.aws_route53_zone.cookson_pro.zone_id
+  name    = var.hosted_zone_domain
   type    = "A"
 
   alias {
@@ -175,6 +189,31 @@ resource "aws_s3_bucket_ownership_controls" "www_cookson_pro_loudfront_logs" {
   }
 }
 
+resource "aws_cloudfront_function" "redirect_root" {
+  name    = "redirect-root-to-www"
+  runtime = "cloudfront-js-1.0"
+  comment = "redirects root domain to www domain"
+  publish = true
+  code    = <<EOT
+function handler(event) {
+    var request = event.request;
+
+    if (request.headers['host'] === '${var.hosted_zone_domain}') {
+        // redirect to www.cookson.pro
+        response = {
+            status: 301,
+            headers: {
+                location: {
+                    value: 'https://www.${var.domain_name}'
+                }
+            }
+        };
+        return response;
+    }
+    return request;
+}
+EOT
+}
 # CloudFront Distribution
 resource "aws_cloudfront_distribution" "s3_distribution" {
   enabled             = true
@@ -182,7 +221,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   comment             = "CloudFront distribution for ${var.domain_name}"
   default_root_object = "index.html" # Common default object for static sites
 
-  aliases = [var.domain_name]
+  aliases = [var.domain_name, var.hosted_zone_domain]
 
   logging_config {
     bucket          = "${var.log_bucket_name}.s3.amazonaws.com"
@@ -222,6 +261,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
       http_port              = 80
       https_port             = 443
       origin_protocol_policy = "https-only" # Enforce HTTPS to the API origin
+      origin_read_timeout    = 60           # Time CloudFront waits for API GW, max 60s.
       origin_ssl_protocols   = ["TLSv1.2"]
     }
   }
@@ -241,6 +281,12 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     # Gzip and Brotli compression enabled.
     cache_policy_id = data.aws_cloudfront_cache_policy.caching_optimized.id
 
+    # Associate a CloudFront Function to add security headers to the response.
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.redirect_root.arn
+    }
+
     # If your S3 content requires CORS handling where S3 itself needs to see the Origin header,
     # you might need an Origin Request Policy like "Managed-CORS-S3Origin".
     # origin_request_policy_id = "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf" # Managed-CORS-S3Origin
@@ -249,6 +295,28 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   # Ordered cache behavior for API requests (/api*)
   ordered_cache_behavior {
     path_pattern     = "/api*"
+    target_origin_id = "API-origin"
+
+    allowed_methods = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods  = ["GET", "HEAD", "OPTIONS"] # Cache GET, HEAD, OPTIONS if API supports it
+
+    viewer_protocol_policy = "redirect-to-https" # Redirect HTTP to HTTPS
+    compress               = true                # Enable compression if API responses are compressible
+
+    # Use a managed cache policy that disables caching.
+    # API responses are often dynamic and should not be cached by CloudFront,
+    # or caching should be controlled by origin cache headers (Cache-Control, Expires).
+    cache_policy_id = data.aws_cloudfront_cache_policy.caching_disabled.id
+
+    # Use a managed origin request policy that forwards all viewer headers (except Host),
+    # all cookies, and all query strings to the API origin.
+    # CloudFront will set the Host header to the origin domain name (api.cookson.pro).
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.origin_all_viewer_except_host_header.id
+  }
+
+  # Ordered cache behavior for Python API requests (/py*)
+  ordered_cache_behavior {
+    path_pattern     = "/py*"
     target_origin_id = "API-origin"
 
     allowed_methods = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]

@@ -68,10 +68,8 @@ resource "aws_lambda_function" "api_handler" {
   handler       = "handler.handler"
   runtime       = "nodejs20.x"
   role          = aws_iam_role.lambda_exec_role.arn
-  timeout       = 11
+  timeout       = 29 # Must be <= API Gateway integration timeout
 
   filename         = "cookson_pro_api/lambda.zip"
   source_code_hash = filebase64sha256("cookson_pro_api/lambda.zip")
 }
-
-

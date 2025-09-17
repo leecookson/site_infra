@@ -1,6 +1,8 @@
+region                 = "us-east-1"
 hosted_zone_domain     = "cookson.pro"
 domain_name            = "www.cookson.pro"
 api_origin_domain      = "api.cookson.pro"
 content_s3_bucket_name = "cookson.pro"
 log_bucket_name        = "cookson.pro.logs"
 api_version            = "v1.0.1"
+py_image_hash          = "1a2d56d"

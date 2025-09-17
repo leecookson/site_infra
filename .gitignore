@@ -7,3 +7,6 @@
 
 # temp work folder used for plan/apply/destroy/import/state
 work
+
+# HubSpot config file
+hubspot.config.yml
